@@ -33,10 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
+            // Include dynamic origin for YouTube IFrame API cross-document messaging
+            const originUrl = encodeURIComponent(window.location.origin);
             videoEmbedContainer.innerHTML = `
                 <iframe 
                     id="yt-player"
-                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1" 
+                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1&origin=${originUrl}" 
                     allowfullscreen 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
