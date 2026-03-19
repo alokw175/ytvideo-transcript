@@ -168,8 +168,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `<div class="transcript-line"><span class="timestamp">${timeStr}</span> <p>${sentence}</p></div>`;
             }).join('');
         } else if (typeof transcriptData === 'object') {
-            // Just stringify nicely
-            transcriptHTML = `<div class="transcript-line"><span class="timestamp">00:00</span> <p>${JSON.stringify(transcriptData, null, 2)}</p></div>`;
+            // Just stringify nicely, but handle gracefully if it's completely empty
+            if (Object.keys(transcriptData).length === 0) {
+                transcriptHTML = `<div class="transcript-line"><p>No transcript data sent by automation... please check n8n.</p></div>`;
+            } else {
+                transcriptHTML = `<div class="transcript-line"><span class="timestamp">00:00</span> <p>${JSON.stringify(transcriptData, null, 2)}</p></div>`;
+            }
         } else {
             transcriptHTML = `<div class="transcript-line"><p>No transcript data found.</p></div>`;
         }
