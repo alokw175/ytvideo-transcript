@@ -33,8 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
+            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
             videoEmbedContainer.innerHTML = `
-                <div id="yt-player" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;"></div>
+                <iframe 
+                    id="yt-player"
+                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1${originParam}" 
+                    allowfullscreen 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
+                </iframe>
             `;
         } else {
             videoEmbedContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: absolute;">Invalid YouTube URL</div>`;
@@ -278,86 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // YouTube Transcript Sync Logic
     if (videoId) {
-        let ytPlayer = null;
-        let isPlayerInitialized = false;
         
-        function initYTPlayer() {
-            if (isPlayerInitialized) return;
-            isPlayerInitialized = true;
-            
-            let pVars = { 'rel': 0, 'enablejsapi': 1 };
-            if (window.location.protocol.startsWith('http')) {
-                pVars.origin = window.location.origin;
-            }
-
-            ytPlayer = new YT.Player('yt-player', {
-                videoId: videoId,
-                playerVars: pVars,
-                events: {
-                    'onStateChange': onPlayerStateChange
-                }
-            });
-            
-            // Allow clicking transcript lines to seek
-            const transcriptLines = document.querySelectorAll('.transcript-seekable');
-            transcriptLines.forEach(line => {
-                line.addEventListener('click', () => {
-                    if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
-                        let startAttr = line.getAttribute('data-start');
-                        if (startAttr) {
-                            if (parseFloat(startAttr) === 0) {
-                                const timeEl = line.querySelector('.timestamp');
-                                if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
-                            }
-                            ytPlayer.seekTo(parseFloat(startAttr), true);
-                            ytPlayer.playVideo();
-                        }
-                    }
-                });
-            });
-        }
-
-        // Extremely robust continuous polling to catch when YT is ready
-        function waitForYT() {
-            if (typeof window.YT !== 'undefined' && window.YT.Player) {
-                initYTPlayer();
-            } else {
-                setTimeout(waitForYT, 100);
-            }
-        }
-        
-        const tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName('script')[0] || document.body;
-        if (firstScriptTag.parentNode) {
-            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-        } else {
-            document.body.appendChild(tag);
-        }
-        
-        waitForYT();
-
-        let lastTime = -1;
-        let currentActiveLine = null;
-
-        function onPlayerStateChange(event) {
-            // Unconditional timer covers state changes reliably 
-        }
-        
-        // Safety fallback: Unconditional polling tracking time directly instead of relying on YT.PlayerState which may be undefined
-        setInterval(() => {
-            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
-                try {
-                    const ct = ytPlayer.getCurrentTime();
-                    // Check if time changed instead of checking playing state
-                    if (ct !== lastTime && ct > 0) {
-                        lastTime = ct;
-                        updateTranscript(ytPlayer);
-                    }
-                } catch (e) {}
-            }
-        }, 500);
-
         function parseTime(timeStr) {
             const parts = timeStr.split(':').map(Number);
             if (parts.length === 2) return parts[0] * 60 + parts[1];
@@ -365,8 +293,59 @@ document.addEventListener('DOMContentLoaded', () => {
             return 0;
         }
 
-        function updateTranscript(player) {
-            const currentTime = player.getCurrentTime();
+        let lastTime = -1;
+        let currentActiveLine = null;
+
+        // Native postMessage listener: completely bypasses the blocked youtube iframe_api script
+        window.addEventListener('message', (event) => {
+            // Only accept messages from YouTube
+            if (event.origin !== "https://www.youtube.com" && event.origin !== "https://www.youtube-nocookie.com") return;
+            
+            try {
+                const data = JSON.parse(event.data);
+                // Listen for time updates specifically
+                if (data.event === 'infoDelivery' && data.info && data.info.currentTime !== undefined) {
+                    const ct = data.info.currentTime;
+                    if (ct !== lastTime && ct > 0) {
+                        lastTime = ct;
+                        updateTranscript(ct);
+                    }
+                }
+            } catch (e) {}
+        });
+
+        // Ping the iframe periodically to tell it we are listening (this forces infoDelivery events)
+        setInterval(() => {
+            const iframe = document.getElementById('yt-player');
+            if (iframe && iframe.contentWindow) {
+                try {
+                    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+                } catch(e) {}
+            }
+        }, 1000);
+
+        // Allow clicking transcript lines to seek natively
+        const transcriptLines = document.querySelectorAll('.transcript-seekable');
+        transcriptLines.forEach(line => {
+            line.addEventListener('click', () => {
+                let startAttr = line.getAttribute('data-start');
+                if (startAttr) {
+                    if (parseFloat(startAttr) === 0) {
+                        const timeEl = line.querySelector('.timestamp');
+                        if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
+                    }
+                    const seconds = parseFloat(startAttr);
+                    const iframe = document.getElementById('yt-player');
+                    if (iframe && iframe.contentWindow) {
+                        // Native seekTo and play commands
+                        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), '*');
+                        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+                    }
+                }
+            });
+        });
+
+        function updateTranscript(currentTime) {
             const lines = document.querySelectorAll('.transcript-line');
 
             let newlyActiveLine = null;
