@@ -33,12 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
-            // Include dynamic origin for YouTube IFrame API cross-document messaging
-            const originUrl = encodeURIComponent(window.location.origin);
+            // Include dynamic origin for YouTube IFrame API cross-document messaging, only if not on file protocol
+            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
             videoEmbedContainer.innerHTML = `
                 <iframe 
                     id="yt-player"
-                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1&origin=${originUrl}" 
+                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1${originParam}" 
                     allowfullscreen 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                     style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
@@ -324,11 +324,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function onPlayerStateChange(event) {
             if (event.data == YT.PlayerState.PLAYING) {
+                if (syncInterval) clearInterval(syncInterval);
                 syncInterval = setInterval(() => updateTranscript(event.target), 500);
             } else {
-                clearInterval(syncInterval);
+                if (syncInterval) clearInterval(syncInterval);
             }
         }
+        
+        // Safety fallback: Unconditional polling in case events are blocked (common on local file://)
+        setInterval(() => {
+            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function' && typeof ytPlayer.getPlayerState === 'function') {
+                try {
+                    if (ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+                        updateTranscript(ytPlayer);
+                    }
+                } catch (e) {}
+            }
+        }, 1000);
 
         function parseTime(timeStr) {
             const parts = timeStr.split(':').map(Number);
