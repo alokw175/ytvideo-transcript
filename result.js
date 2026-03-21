@@ -170,7 +170,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (typeof transcriptData === 'object') {
             // Just stringify nicely, but handle gracefully if it's completely empty
             if (Object.keys(transcriptData).length === 0) {
-                transcriptHTML = `<div class="transcript-line"><p>No transcript data sent by automation... please check n8n.</p></div>`;
+                transcriptHTML = `
+                <div class="transcript-line" style="border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.1);">
+                    <div style="width: 100%;">
+                        <p style="color: #fca5a5; font-weight: 500; font-size: 1.1rem; margin-bottom: 0.8rem;">
+                            <i class="fa-solid fa-triangle-exclamation"></i> n8n Automation Error: The webhook sent an empty response!
+                        </p>
+                        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-secondary);">
+                            <strong>Raw data received by website:</strong> <br>
+                            <code style="background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 6px; display: inline-block; margin: 5px 0 15px 0;">${rawData}</code><br>
+                            If you see the data inside your n8n dashboard but not here, it means your final <strong>Webhook Response</strong> node in n8n is not configured to return the transcript data back to the website. Please fix your n8n workflow to output the correct data.
+                        </p>
+                    </div>
+                </div>`;
             } else {
                 transcriptHTML = `<div class="transcript-line"><span class="timestamp">00:00</span> <p>${JSON.stringify(transcriptData, null, 2)}</p></div>`;
             }

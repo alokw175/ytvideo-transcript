@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const errText = await response.text();
                 throw new Error(`Server error (${response.status}): ${errText}`);
             }
-            
+
             const rawText = await response.text();
             let data;
             try {
@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // If it's just raw text, we still want to show it on the result page
                 data = { transcript: rawText };
             }
-            
+
             // Save data to localStorage to display on the next page
             localStorage.setItem('ytExtractResult', JSON.stringify(data));
             localStorage.setItem('ytExtractUrl', url);
