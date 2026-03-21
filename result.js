@@ -120,16 +120,16 @@ document.addEventListener('DOMContentLoaded', () => {
         videoTitle.textContent = foundTitle || 'Loading...';
         channelName.textContent = foundChannel || 'Loading...';
 
-        // If automation didn't send Title or Channel, fetch them directly from YouTube oEmbed API!
-        if ((!foundTitle || !foundChannel) && videoId) {
+        // Always try to fetch true Title and Channel from YouTube oEmbed API to fix wrong caption names!
+        if (videoId) {
             const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
             fetch(oembedUrl)
                 .then(res => res.json())
                 .then(oembedData => {
-                    if (!foundTitle && oembedData.title) {
+                    if (oembedData.title) {
                         videoTitle.textContent = oembedData.title;
                     }
-                    if (!foundChannel && oembedData.author_name) {
+                    if (oembedData.author_name) {
                         channelName.textContent = oembedData.author_name;
                     }
                 })
@@ -281,14 +281,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (videoId) {
         let ytPlayer = null;
         window.onYouTubeIframeAPIReady = function () {
+            let pVars = {
+                'rel': 0,
+                'enablejsapi': 1
+            };
+            if (window.location.protocol.startsWith('http')) {
+                pVars.origin = window.location.origin;
+            }
+
             ytPlayer = new YT.Player('yt-player', {
                 videoId: videoId,
-                playerVars: {
-                    'rel': 0,
-                    'enablejsapi': 1,
-                    // Provide origin only if on a valid http/https host
-                    'origin': window.location.protocol.startsWith('http') ? window.location.origin : undefined
-                },
+                playerVars: pVars,
                 events: {
                     'onStateChange': onPlayerStateChange
                 }
