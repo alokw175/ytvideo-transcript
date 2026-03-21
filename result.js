@@ -33,9 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
-            // We use a div container and let the YT API generate the iframe to prevent cross-origin message channel race conditions
+            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
             videoEmbedContainer.innerHTML = `
-                <div id="yt-player" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;"></div>
+                <iframe 
+                    id="yt-player"
+                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1${originParam}" 
+                    allowfullscreen 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
+                </iframe>
             `;
         } else {
             videoEmbedContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: absolute;">Invalid YouTube URL</div>`;
@@ -282,17 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let ytPlayer = null;
         
         function initYTPlayer() {
-            let pVars = {
-                'rel': 0,
-                'enablejsapi': 1
-            };
-            if (window.location.protocol.startsWith('http')) {
-                pVars.origin = window.location.origin;
-            }
-
             ytPlayer = new YT.Player('yt-player', {
-                videoId: videoId,
-                playerVars: pVars,
                 events: {
                     'onStateChange': onPlayerStateChange
                 }
