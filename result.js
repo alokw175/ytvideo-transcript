@@ -329,28 +329,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        let syncInterval;
+        let lastTime = -1;
         let currentActiveLine = null;
 
         function onPlayerStateChange(event) {
-            if (event.data == YT.PlayerState.PLAYING) {
-                if (syncInterval) clearInterval(syncInterval);
-                syncInterval = setInterval(() => updateTranscript(event.target), 500);
-            } else {
-                if (syncInterval) clearInterval(syncInterval);
-            }
+            // Unconditional timer covers state changes reliably 
         }
         
-        // Safety fallback: Unconditional polling in case events are blocked (common on local file://)
+        // Safety fallback: Unconditional polling tracking time directly instead of relying on YT.PlayerState which may be undefined
         setInterval(() => {
-            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function' && typeof ytPlayer.getPlayerState === 'function') {
+            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
                 try {
-                    if (ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+                    const ct = ytPlayer.getCurrentTime();
+                    // Check if time changed instead of checking playing state
+                    if (ct !== lastTime && ct > 0) {
+                        lastTime = ct;
                         updateTranscript(ytPlayer);
                     }
                 } catch (e) {}
             }
-        }, 1000);
+        }, 500);
 
         function parseTime(timeStr) {
             const parts = timeStr.split(':').map(Number);
