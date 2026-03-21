@@ -91,12 +91,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const foundViews = findValueDeep(data, ['viewcount', 'views'], ['view', 'viwes'], ['url', 'id']);
         const foundLikes = findValueDeep(data, ['likecount', 'likes'], ['like', 'thumbs'], ['url', 'id']);
 
+        // Setup a resilient transcript finder that also captures arrays (findValueDeep ignores arrays)
+        function findTranscriptData(obj) {
+            if (!obj || typeof obj !== 'object') return null;
+            // Check if root has a likely array
+            const terms = ['transcript', 'text', 'content', 'caption', 'subtitles', 'segments'];
+            for (const key of Object.keys(obj)) {
+                if (terms.some(t => key.toLowerCase().includes(t))) {
+                    if (Array.isArray(obj[key]) || typeof obj[key] === 'string') return obj[key];
+                }
+            }
+            // Check if obj is an array itself
+            if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object') {
+                if ('text' in obj[0] || 'start' in obj[0] || 'timestamp' in obj[0]) return obj;
+            }
+            // Deep search
+            for (const key of Object.keys(obj)) {
+                if (typeof obj[key] === 'object') {
+                    const res = findTranscriptData(obj[key]);
+                    if (res) return res;
+                }
+            }
+            return null;
+        }
+
         // Find transcript, preferring typical names, otherwise fallback to the whole object
         let transcriptData = null;
         if (typeof actualData === 'string') {
             transcriptData = actualData;
         } else {
-            transcriptData = findValueDeep(data, ['transcript', 'text', 'content', 'summary'], ['caption'], ['url']) || actualData;
+            transcriptData = findTranscriptData(data) || findValueDeep(data, ['transcript', 'text', 'content', 'summary'], ['caption'], ['url']) || actualData;
         }
 
         // Fill Title and Channel
@@ -137,6 +161,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (foundViews && videoViews) videoViews.textContent = formatCount(foundViews);
         if (foundLikes && videoLikes) videoLikes.textContent = formatCount(foundLikes);
 
+        // Helper to format any seconds or string time nicely
+        function formatTimeDisplay(timeVal) {
+            if (typeof timeVal === 'string' && timeVal.includes(':')) return timeVal;
+            const totalSeconds = Math.floor(Number(timeVal));
+            if (isNaN(totalSeconds)) return '00:00';
+            const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const secs = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
+
         // Fill Transcript
         let transcriptHTML = '';
 
@@ -144,8 +178,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handline array of objects {text, timestamp} etc
             transcriptHTML = transcriptData.map((item, index) => {
                 const text = typeof item === 'object' ? (item.text || item.content || JSON.stringify(item)) : item;
-                const time = typeof item === 'object' ? (item.timestamp || item.start || `00:${String(index).padStart(2, '0')}`) : '00:00';
-                return `<div class="transcript-line"><span class="timestamp">${time}</span> <p>${text}</p></div>`;
+                let rawTime = typeof item === 'object' ? (item.timestamp !== undefined ? item.timestamp : item.start) : undefined;
+                if (rawTime === undefined) rawTime = index * 5; // fallback
+                
+                const formattedTime = formatTimeDisplay(rawTime);
+                const dataTime = !isNaN(Number(rawTime)) ? Number(rawTime) : 0; // uses parseTime later if 0
+
+                return `<div class="transcript-line transcript-seekable" data-start="${dataTime}" style="cursor: pointer;"><span class="timestamp">${formattedTime}</span> <p>${text}</p></div>`;
             }).join('');
         } else if (typeof transcriptData === 'string') {
             // Split huge block of text into sentences for a better UI look
@@ -161,11 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mins = Math.floor(currentTime / 60).toString().padStart(2, '0');
                 const secs = (currentTime % 60).toString().padStart(2, '0');
                 const timeStr = `${mins}:${secs}`;
+                const dataTime = currentTime;
 
                 // roughly estimate 5 seconds per sentence
                 currentTime += 5;
 
-                return `<div class="transcript-line"><span class="timestamp">${timeStr}</span> <p>${sentence}</p></div>`;
+                return `<div class="transcript-line transcript-seekable" data-start="${dataTime}" style="cursor: pointer;"><span class="timestamp">${timeStr}</span> <p>${sentence}</p></div>`;
             }).join('');
         } else if (typeof transcriptData === 'object') {
             // Just stringify nicely, but handle gracefully if it's completely empty
@@ -246,11 +286,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // YouTube Transcript Sync Logic
     if (videoId) {
+        let ytPlayer = null;
         window.onYouTubeIframeAPIReady = function () {
-            new YT.Player('yt-player', {
+            ytPlayer = new YT.Player('yt-player', {
                 events: {
                     'onStateChange': onPlayerStateChange
                 }
+            });
+            
+            // Allow clicking transcript lines to seek
+            const transcriptLines = document.querySelectorAll('.transcript-seekable');
+            transcriptLines.forEach(line => {
+                line.addEventListener('click', () => {
+                    if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                        let startAttr = line.getAttribute('data-start');
+                        if (startAttr) {
+                            // If it's a 0 maybe it was parsed with string fallback, so try timestamp parsing
+                            if (parseFloat(startAttr) === 0) {
+                                const timeEl = line.querySelector('.timestamp');
+                                if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
+                            }
+                            ytPlayer.seekTo(parseFloat(startAttr), true);
+                            ytPlayer.playVideo();
+                        }
+                    }
+                });
             });
         };
 
@@ -284,9 +344,20 @@ document.addEventListener('DOMContentLoaded', () => {
             let newlyActiveLine = null;
 
             lines.forEach((line) => {
-                const timeEl = line.querySelector('.timestamp');
-                if (!timeEl) return;
-                const lineTime = parseTime(timeEl.textContent.trim());
+                let lineTime = 0;
+                const startAttr = line.getAttribute('data-start');
+                if (startAttr) {
+                    lineTime = parseFloat(startAttr);
+                }
+                
+                // Fallback to text reading if no valid data source mapped
+                if (lineTime === 0) {
+                    const timeEl = line.querySelector('.timestamp');
+                    if (timeEl) {
+                        lineTime = parseTime(timeEl.textContent.trim());
+                    }
+                }
+                
                 if (currentTime >= lineTime) {
                     newlyActiveLine = line;
                 }
@@ -297,7 +368,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentActiveLine.classList.remove('active');
                 }
                 newlyActiveLine.classList.add('active');
-                newlyActiveLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Use a smoother custom scroll logic over scrollIntoView to avoid layout jumps
+                const container = document.getElementById('transcript-content');
+                if (container) {
+                    const lineTop = newlyActiveLine.offsetTop;
+                    // Offset relative to parent container
+                    const topPos = lineTop - container.offsetTop;
+                    const containerHalf = container.offsetHeight / 2;
+                    container.scrollTo({ top: topPos - containerHalf, behavior: 'smooth' });
+                }
                 currentActiveLine = newlyActiveLine;
             }
         }
