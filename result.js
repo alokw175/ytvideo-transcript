@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
-            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
+            const originParam = window.location.protocol.startsWith('http') ? `&origin=${window.location.origin}` : '';
             videoEmbedContainer.innerHTML = `
                 <iframe 
                     id="yt-player"
@@ -299,13 +299,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Native postMessage listener: completely bypasses the blocked youtube iframe_api script
         window.addEventListener('message', (event) => {
             // Only accept messages from YouTube
-            if (event.origin !== "https://www.youtube.com" && event.origin !== "https://www.youtube-nocookie.com") return;
+            if (typeof event.origin === 'string' && !event.origin.includes("youtube.com") && !event.origin.includes("youtube-nocookie.com")) return;
             
             try {
-                const data = JSON.parse(event.data);
+                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                 // Listen for time updates specifically
-                if (data.event === 'infoDelivery' && data.info && data.info.currentTime !== undefined) {
-                    const ct = data.info.currentTime;
+                if (data && data.event === 'infoDelivery' && data.info && data.info.currentTime !== undefined) {
+                    const ct = parseFloat(data.info.currentTime);
                     if (ct !== lastTime && ct > 0) {
                         lastTime = ct;
                         updateTranscript(ct);
@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const iframe = document.getElementById('yt-player');
             if (iframe && iframe.contentWindow) {
                 try {
-                    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+                    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'yt-player', channel: 'widget' }), '*');
                 } catch(e) {}
             }
         }, 1000);
