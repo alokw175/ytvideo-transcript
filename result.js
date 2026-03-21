@@ -33,15 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
-            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
             videoEmbedContainer.innerHTML = `
-                <iframe 
-                    id="yt-player"
-                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1${originParam}" 
-                    allowfullscreen 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
-                </iframe>
+                <div id="yt-player" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;"></div>
             `;
         } else {
             videoEmbedContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: absolute;">Invalid YouTube URL</div>`;
@@ -286,9 +279,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // YouTube Transcript Sync Logic
     if (videoId) {
         let ytPlayer = null;
+        let isPlayerInitialized = false;
         
         function initYTPlayer() {
+            if (isPlayerInitialized) return;
+            isPlayerInitialized = true;
+            
+            let pVars = { 'rel': 0, 'enablejsapi': 1 };
+            if (window.location.protocol.startsWith('http')) {
+                pVars.origin = window.location.origin;
+            }
+
             ytPlayer = new YT.Player('yt-player', {
+                videoId: videoId,
+                playerVars: pVars,
                 events: {
                     'onStateChange': onPlayerStateChange
                 }
@@ -313,21 +317,25 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // If YT API is already loaded in memory (cached), execute immediately
-        if (window.YT && window.YT.Player) {
-            initYTPlayer();
-        } else {
-            window.onYouTubeIframeAPIReady = initYTPlayer;
-            const tag = document.createElement('script');
-            tag.src = "https://www.youtube.com/iframe_api";
-            // Insert the script tag efficiently
-            const firstScriptTag = document.getElementsByTagName('script')[0] || document.body;
-            if (firstScriptTag.parentNode) {
-                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        // Extremely robust continuous polling to catch when YT is ready
+        function waitForYT() {
+            if (typeof window.YT !== 'undefined' && window.YT.Player) {
+                initYTPlayer();
             } else {
-                document.body.appendChild(tag);
+                setTimeout(waitForYT, 100);
             }
         }
+        
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0] || document.body;
+        if (firstScriptTag.parentNode) {
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        } else {
+            document.body.appendChild(tag);
+        }
+        
+        waitForYT();
 
         let lastTime = -1;
         let currentActiveLine = null;
