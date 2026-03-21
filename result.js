@@ -293,57 +293,73 @@ document.addEventListener('DOMContentLoaded', () => {
             return 0;
         }
 
+        let ytPlayer = null;
+        let isPlayerInitialized = false;
+
+        function initYTPlayer() {
+            if (isPlayerInitialized) return;
+            isPlayerInitialized = true;
+            
+            // Bind to the existing iframe natively without recreating it or reloading its src
+            ytPlayer = new YT.Player('yt-player', {
+                events: { }
+            });
+            
+            // Allow clicking transcript lines to seek natively
+            const transcriptLines = document.querySelectorAll('.transcript-seekable');
+            transcriptLines.forEach(line => {
+                line.addEventListener('click', () => {
+                    if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                        let startAttr = line.getAttribute('data-start');
+                        if (startAttr) {
+                            if (parseFloat(startAttr) === 0) {
+                                const timeEl = line.querySelector('.timestamp');
+                                if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
+                            }
+                            ytPlayer.seekTo(parseFloat(startAttr), true);
+                            ytPlayer.playVideo();
+                        }
+                    }
+                });
+            });
+        }
+
+        // Extremely robust continuous polling to catch when YT is ready
+        function waitForYT() {
+            if (typeof window.YT !== 'undefined' && window.YT.Player) {
+                initYTPlayer();
+            } else {
+                setTimeout(waitForYT, 100);
+            }
+        }
+        
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0] || document.body;
+        if (firstScriptTag.parentNode) {
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        } else {
+            document.body.appendChild(tag);
+        }
+        
+        waitForYT();
+
         let lastTime = -1;
         let currentActiveLine = null;
 
-        // Native postMessage listener: completely bypasses the blocked youtube iframe_api script
-        window.addEventListener('message', (event) => {
-            // Only accept messages from YouTube
-            if (typeof event.origin === 'string' && !event.origin.includes("youtube.com") && !event.origin.includes("youtube-nocookie.com")) return;
-            
-            try {
-                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                // Listen for time updates specifically
-                if (data && data.event === 'infoDelivery' && data.info && data.info.currentTime !== undefined) {
-                    const ct = parseFloat(data.info.currentTime);
+        // Safety fallback: Unconditional polling tracking time directly bypassing unreliable player states
+        setInterval(() => {
+            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
+                try {
+                    const ct = ytPlayer.getCurrentTime();
+                    // Check if time changed instead of checking playing state
                     if (ct !== lastTime && ct > 0) {
                         lastTime = ct;
                         updateTranscript(ct);
                     }
-                }
-            } catch (e) {}
-        });
-
-        // Ping the iframe periodically to tell it we are listening (this forces infoDelivery events)
-        setInterval(() => {
-            const iframe = document.getElementById('yt-player');
-            if (iframe && iframe.contentWindow) {
-                try {
-                    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'yt-player', channel: 'widget' }), '*');
-                } catch(e) {}
+                } catch (e) {}
             }
-        }, 1000);
-
-        // Allow clicking transcript lines to seek natively
-        const transcriptLines = document.querySelectorAll('.transcript-seekable');
-        transcriptLines.forEach(line => {
-            line.addEventListener('click', () => {
-                let startAttr = line.getAttribute('data-start');
-                if (startAttr) {
-                    if (parseFloat(startAttr) === 0) {
-                        const timeEl = line.querySelector('.timestamp');
-                        if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
-                    }
-                    const seconds = parseFloat(startAttr);
-                    const iframe = document.getElementById('yt-player');
-                    if (iframe && iframe.contentWindow) {
-                        // Native seekTo and play commands
-                        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), '*');
-                        iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-                    }
-                }
-            });
-        });
+        }, 500);
 
         function updateTranscript(currentTime) {
             const lines = document.querySelectorAll('.transcript-line');
