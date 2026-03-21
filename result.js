@@ -17,18 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = 'index.html';
         return;
     }
+    // Extract video ID from URL
+    function getYouTubeID(url) {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    const videoId = getYouTubeID(videoUrl);
 
     try {
         const data = JSON.parse(rawData);
-
-        // Extract video ID from URL
-        function getYouTubeID(url) {
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-            const match = url.match(regExp);
-            return (match && match[2].length === 11) ? match[2] : null;
-        }
-
-        const videoId = getYouTubeID(videoUrl);
 
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
