@@ -300,36 +300,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isPlayerInitialized) return;
             isPlayerInitialized = true;
             
-            // Bind to the existing iframe natively without recreating it or reloading its src
-            ytPlayer = new YT.Player('yt-player', {
-                events: { }
-            });
+            // Bind to the existing iframe
+            ytPlayer = new YT.Player('yt-player', { events: {} });
             
-            // Allow clicking transcript lines to seek natively
-            const transcriptLines = document.querySelectorAll('.transcript-seekable');
-            transcriptLines.forEach(line => {
-                line.addEventListener('click', () => {
-                    if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
-                        let startAttr = line.getAttribute('data-start');
-                        if (startAttr) {
-                            if (parseFloat(startAttr) === 0) {
-                                const timeEl = line.querySelector('.timestamp');
-                                if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
-                            }
-                            ytPlayer.seekTo(parseFloat(startAttr), true);
-                            ytPlayer.playVideo();
-                        }
-                    }
-                });
-            });
+            // Critical Fix for existing iframes: Reload the iframe src so YT.Player gets the 'ready' signal
+            const iframe = document.getElementById('yt-player');
+            if (iframe) {
+                iframe.src = iframe.src;
+            }
         }
 
-        // Extremely robust continuous polling to catch when YT is ready
+        // Wait for YT API if the browser decides to load it
         function waitForYT() {
             if (typeof window.YT !== 'undefined' && window.YT.Player) {
                 initYTPlayer();
             } else {
-                setTimeout(waitForYT, 100);
+                setTimeout(waitForYT, 100); // Polling for the script
             }
         }
         
@@ -341,18 +327,41 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             document.body.appendChild(tag);
         }
-        
         waitForYT();
 
         let lastTime = -1;
         let currentActiveLine = null;
 
-        // Safety fallback: Unconditional polling tracking time directly bypassing unreliable player states
+        // System 1: Native PostMessage Listener (Bypasses adblockers breaking window.YT completely)
+        window.addEventListener('message', (event) => {
+            if (typeof event.origin === 'string' && !event.origin.includes("youtube.com") && !event.origin.includes("youtube-nocookie.com")) return;
+            try {
+                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (data && data.event === 'infoDelivery' && data.info && data.info.currentTime !== undefined) {
+                    const ct = parseFloat(data.info.currentTime);
+                    if (ct !== lastTime && ct > 0) {
+                        lastTime = ct;
+                        updateTranscript(ct);
+                    }
+                }
+            } catch (e) {}
+        });
+
+        // Continuously send listening event to activate infoDelivery
+        setInterval(() => {
+            const iframe = document.getElementById('yt-player');
+            if (iframe && iframe.contentWindow) {
+                try {
+                    iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), 'https://www.youtube.com');
+                } catch(e) {}
+            }
+        }, 1000);
+
+        // System 2: Official YT.Player API polling fallback (if message API fails to respond)
         setInterval(() => {
             if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
                 try {
                     const ct = ytPlayer.getCurrentTime();
-                    // Check if time changed instead of checking playing state
                     if (ct !== lastTime && ct > 0) {
                         lastTime = ct;
                         updateTranscript(ct);
@@ -360,6 +369,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (e) {}
             }
         }, 500);
+
+        // Allow clicking transcript lines to seek natively
+        const transcriptLines = document.querySelectorAll('.transcript-seekable');
+        transcriptLines.forEach(line => {
+            line.addEventListener('click', () => {
+                let startAttr = line.getAttribute('data-start');
+                if (startAttr) {
+                    if (parseFloat(startAttr) === 0) {
+                        const timeEl = line.querySelector('.timestamp');
+                        if (timeEl) startAttr = parseTime(timeEl.textContent.trim());
+                    }
+                    const seconds = parseFloat(startAttr);
+                    
+                    // Try official player
+                    if (ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                        try {
+                            ytPlayer.seekTo(seconds, true);
+                            ytPlayer.playVideo();
+                        } catch(e) {}
+                    }
+
+                    // Try native command
+                    const iframe = document.getElementById('yt-player');
+                    if (iframe && iframe.contentWindow) {
+                        try {
+                            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), 'https://www.youtube.com');
+                            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), 'https://www.youtube.com');
+                        } catch(e) {}
+                    }
+                }
+            });
+        });
 
         function updateTranscript(currentTime) {
             const lines = document.querySelectorAll('.transcript-line');
