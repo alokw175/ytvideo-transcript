@@ -33,16 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Embed the video 
         // Note: Playback on file:/// environments is generally restricted by YouTube as Error 153.
         if (videoId) {
-            // Include dynamic origin for YouTube IFrame API cross-document messaging, only if not on file protocol
-            const originParam = window.location.protocol.startsWith('http') ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
+            // We use a div container and let the YT API generate the iframe to prevent cross-origin message channel race conditions
             videoEmbedContainer.innerHTML = `
-                <iframe 
-                    id="yt-player"
-                    src="https://www.youtube.com/embed/${videoId}?rel=0&enablejsapi=1${originParam}" 
-                    allowfullscreen 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;">
-                </iframe>
+                <div id="yt-player" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; border-radius: 16px;"></div>
             `;
         } else {
             videoEmbedContainer.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--text-secondary); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; position: absolute;">Invalid YouTube URL</div>`;
@@ -289,6 +282,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let ytPlayer = null;
         window.onYouTubeIframeAPIReady = function () {
             ytPlayer = new YT.Player('yt-player', {
+                videoId: videoId,
+                playerVars: {
+                    'rel': 0,
+                    'enablejsapi': 1,
+                    // Provide origin only if on a valid http/https host
+                    'origin': window.location.protocol.startsWith('http') ? window.location.origin : undefined
+                },
                 events: {
                     'onStateChange': onPlayerStateChange
                 }

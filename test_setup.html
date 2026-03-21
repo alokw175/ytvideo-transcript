@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Local Testing</title>
+</head>
+<body>
+  <script>
+    localStorage.setItem('ytExtractUrl', 'https://www.youtube.com/watch?v=S37g1XJdZtU');
+    localStorage.setItem('ytExtractResult', JSON.stringify({
+      "videoTitle": "Test Video",
+      "channelName": "Test Channel",
+      "views": 1000,
+      "likes": 100,
+      "transcript": [
+        {"text": "Hey everyone. Google's anti-gravity has", "start": 0},
+        {"text": "been around for a while, but only now", "start": 2},
+        {"text": "are people starting to realize how", "start": 4},
+        {"text": "powerful it really is. And the best part", "start": 6},
+        {"text": "is it's completely free. It's not just", "start": 9},
+        {"text": "an IDE. It's an agentdriven workspace", "start": 12}
+      ]
+    }));
+    window.location.href = 'result.html';
+  </script>
+</body>
+</html>
